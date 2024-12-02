@@ -1,0 +1,175 @@
+
+-- Create membership_levels table
+CREATE TABLE membership_levels (
+    level_id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier
+    level_name VARCHAR(50) NOT NULL UNIQUE    -- Name of the membership level (e.g., 'Full', 'Associate')
+);
+
+
+-- Create research_programs table
+CREATE TABLE research_programs (
+    program_id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier
+    program_name VARCHAR(100) NOT NULL UNIQUE   -- Name of the research program (e.g., 'Cancer Population Science (CPS)')
+);
+
+-- Drop uvmcc_members table if it exists
+DROP TABLE IF EXISTS uvmcc_members;
+
+-- Create uvmcc_members table
+CREATE TABLE uvmcc_members (
+    history_id INT AUTO_INCREMENT PRIMARY KEY,
+    slate_id VARCHAR(10) NOT NULL,  -- Member's ID (no foreign key needed)
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    middle_initial VARCHAR(5) DEFAULT NULL,
+    external_member BOOLEAN DEFAULT FALSE,
+    affiliation VARCHAR(255) DEFAULT NULL,
+    membership_level_id INT NOT NULL,  -- Foreign key to membership_levels table
+    research_program_id INT DEFAULT NULL,  -- Foreign key to research_programs table
+    valid_from DATE NOT NULL,
+    valid_until DATE NULL,
+    current BOOLEAN DEFAULT FALSE,
+
+    -- Foreign Key Constraints
+    FOREIGN KEY (membership_level_id) REFERENCES membership_levels(level_id) ON DELETE RESTRICT,
+    FOREIGN KEY (research_program_id) REFERENCES research_programs(program_id) ON DELETE SET NULL
+);
+
+-- Index for faster searching by name
+CREATE INDEX idx_name ON uvmcc_members (first_name, last_name);
+
+-- Index for faster searching by slate id
+CREATE INDEX idx_slate_id ON uvmcc_members (slate_id);
+
+-- Drop uvmcc_member_aliases table if it exists
+DROP TABLE IF EXISTS uvmcc_member_aliases;
+
+-- Create uvmcc_member_aliases table
+CREATE TABLE uvmcc_member_aliases (
+    alias_id INT AUTO_INCREMENT PRIMARY KEY,  -- Unique identifier for each alias
+    slate_id VARCHAR(10) NOT NULL,  -- References the UVMCC member
+    first_name VARCHAR(50) NOT NULL,  -- Alias first name
+    last_name VARCHAR(50) NOT NULL,  -- Alias last name
+    middle_initial VARCHAR(5) DEFAULT NULL,  -- Alias middle initial (optional)
+    affiliation VARCHAR(100) DEFAULT NULL,  -- Alias affiliation (optional)
+
+    -- Foreign Key to ensure alias belongs to a valid UVMCC member
+    FOREIGN KEY (slate_id) REFERENCES uvmcc_members(slate_id) ON DELETE CASCADE,
+
+    -- Prevent duplicate aliases for the same member
+    UNIQUE (slate_id, first_name, last_name, middle_initial, affiliation)
+);
+
+-- Drop publications table if it exists
+DROP TABLE IF EXISTS publications;
+
+-- Create publications table
+CREATE TABLE publications (
+    pub_id INT AUTO_INCREMENT PRIMARY KEY,  -- Surrogate key for internal use
+    pmid VARCHAR(12) NULL UNIQUE,  -- Optional PubMed ID
+    article_title VARCHAR(255) NOT NULL,
+    journal_title VARCHAR(255) NOT NULL,
+    journal_issn VARCHAR(20) NOT NULL,
+    publication_date DATE NOT NULL,
+    volume VARCHAR(20) NULL,
+    issue VARCHAR(20) NULL,
+    article_identifier VARCHAR(100) NULL,
+    doi VARCHAR(100) NULL,
+    epub_date DATE NULL,
+    pmcid VARCHAR(12) NULL,
+    UNIQUE (article_title, journal_title, publication_date)  -- Ensure uniqueness for non-PMID entries
+);
+
+-- Index for faster searching by journal and publication date
+CREATE INDEX idx_journal_year ON publications (journal_issn, publication_date);
+
+-- Drop publications_details table if it exists
+DROP TABLE IF EXISTS publications_details;
+
+-- Create publications_details table
+CREATE TABLE publications_details (
+    pub_id INT PRIMARY KEY,  -- Surrogate key for internal use, Foreign Key to publications.pub_id
+    cps INT DEFAULT 0,  -- How many CPS authors (default to 0 if unknown)
+    che INT DEFAULT 0,  -- How many CHE authors (default to 0 if unknown)
+    cc INT DEFAULT 0,   -- How many CC authors (default to 0 if unknown)
+    na INT DEFAULT 0,   -- How many Other member authors (default to 0 if unknown)
+    inter BOOLEAN DEFAULT FALSE,  -- Is interprogrammatic
+    intra BOOLEAN DEFAULT FALSE,  -- Is intraprogrammatic
+    inter_inst BOOLEAN DEFAULT FALSE,  -- Is interinstitutional
+    jif FLOAT NULL,  -- Journal Impact Factor (NULL values allowed)
+    jci FLOAT NULL,  -- Journal Citation Indicator (NULL values allowed)
+    high_impact BOOLEAN DEFAULT FALSE,  -- High-impact designation
+    high_impact_notes TEXT NULL,  -- Notes related to high impact (NULL values allowed)
+    cancer_relevant_prelim BOOLEAN DEFAULT FALSE,  -- Preliminary cancer relevance
+    cancer_relevant_review BOOLEAN DEFAULT FALSE,  -- Reviewed cancer relevance
+    cancer_relevant_notes TEXT NULL,  -- Notes on cancer relevance (NULL values allowed),
+    FOREIGN KEY (pub_id) REFERENCES publications(pub_id) ON DELETE CASCADE  -- Foreign Key constraint
+);
+
+-- Add an index for faster querying by publication ID
+CREATE INDEX idx_pub_id ON publications_details (pub_id);
+
+-- Drop authors table if it exists
+DROP TABLE IF EXISTS authors;
+
+-- Create authors table
+CREATE TABLE authors (
+    author_id INT AUTO_INCREMENT PRIMARY KEY,  -- Auto-incremented primary key
+    author_first VARCHAR(100) NOT NULL,  -- Author first name, indexed
+    author_last VARCHAR(100) NOT NULL,   -- Author last name, indexed
+    author_middle VARCHAR(5) DEFAULT NULL,  -- Optional middle initial, allows NULL
+    author_affiliation VARCHAR(100) DEFAULT NULL,  -- Optional author affiliation, allows NULL
+    slate_id VARCHAR(10) DEFAULT NULL,  -- Optional slate member ID (for UVMCC members only)
+    -- Ensure unique combination of first, last, middle, and affiliation
+    UNIQUE (author_first, author_last, author_middle, author_affiliation)
+);
+
+-- Index for faster searching by author name (first and last)
+CREATE INDEX idx_author_name ON authors (author_first, author_last);
+
+-- Drop authors2pubs table if it exists
+DROP TABLE IF EXISTS authors2pubs;
+
+-- Create authors2pubs table
+CREATE TABLE authors2pubs (
+    author_id INT,  -- Foreign key to authors.author_id
+    pub_id INT,  -- Foreign key to publications.pub_id
+    author_order INT DEFAULT NULL,  -- Default author order is NULL
+
+    -- Foreign Key Constraints
+    FOREIGN KEY (author_id) REFERENCES authors(author_id) ON DELETE CASCADE,
+    FOREIGN KEY (pub_id) REFERENCES publications(pub_id) ON DELETE CASCADE,
+
+    -- Ensure unique combination of author_id and pub_id
+    UNIQUE (author_id, pub_id),
+
+    -- Index for faster querying by pub_id
+    INDEX idx_pub_id (pub_id)
+);
+
+-- Drop journals2impact table if it exists
+DROP TABLE IF EXISTS journals2impact;
+
+-- Create journals2impact table
+CREATE TABLE journals2impact (
+    journal_issn VARCHAR(20),
+    journal_title VARCHAR(100),
+    year YEAR NOT NULL,
+    jif FLOAT NULL,
+    jci FLOAT NULL,
+
+    -- Composite unique key to avoid duplicate journal-year entries
+    UNIQUE (journal_issn, year)
+);
+
+-- Insert sample data into membership_levels
+INSERT INTO membership_levels (level_name)
+VALUES ('Full'), ('Associate'), ('Affiliate'), ('Core Clinical'), ('Clinical'), ('Trainee'), ('Former');
+
+-- Insert sample data into research_programs
+INSERT INTO research_programs (program_name)
+VALUES 
+('Cancer Population Science (CPS)'), 
+('Cancer Cell (CC)'), 
+('Cancer Host and Environment (CHE)'),
+('Other');
